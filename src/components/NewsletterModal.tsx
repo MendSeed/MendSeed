@@ -1,11 +1,11 @@
 // ============================================================================
-// NEWSLETTER MODAL — MENDSEED DISPATCH
+// NEWSLETTER MODAL — MENDSEED DISPATCH (POWERED BY RESEND)
 // Aligned with Section 17 of Master Product Brief
 // Explicit double opt-in, digest preferences, completely unlinked from reports
 // ============================================================================
 
 import React, { useState } from 'react';
-import { CheckCircle, Mail, ShieldCheck, X } from 'lucide-react';
+import { CheckCircle, Mail, Send, ShieldCheck, X } from 'lucide-react';
 import { subscribeNewsletter } from '../lib/storage';
 
 interface NewsletterModalProps {
@@ -20,6 +20,7 @@ export const NewsletterModal: React.FC<NewsletterModalProps> = ({ isOpen, onClos
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [deliveryNote, setDeliveryNote] = useState<string>('');
 
   if (!isOpen) return null;
 
@@ -29,7 +30,38 @@ export const NewsletterModal: React.FC<NewsletterModalProps> = ({ isOpen, onClos
     setIsSubmitting(true);
 
     try {
-      await subscribeNewsletter(email, notifyNewIssues, weeklyDigest);
+      // 1. Try serverless Resend API route
+      let sentViaApi = false;
+      try {
+        const resp = await fetch('/api/newsletter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email.trim(),
+            notifyNewIssues,
+            weeklyDigest,
+          }),
+        });
+
+        if (resp.ok) {
+          const data = await resp.json();
+          sentViaApi = true;
+          if (data.emailSent) {
+            setDeliveryNote('A confirmation email has been sent to your inbox via Resend.');
+          } else {
+            setDeliveryNote('Your email is registered in our database. (Resend API key can be set in Vercel to enable live dispatch).');
+          }
+        }
+      } catch (apiErr) {
+        console.warn('[Newsletter] API call failed, falling back to local/Neon storage:', apiErr);
+      }
+
+      // 2. Client fallback if API route was not reached
+      if (!sentViaApi) {
+        await subscribeNewsletter(email, notifyNewIssues, weeklyDigest);
+        setDeliveryNote('Your subscription has been registered.');
+      }
+
       setSuccess(true);
     } catch (err: any) {
       setError(err.message || 'Subscription failed.');
@@ -42,53 +74,62 @@ export const NewsletterModal: React.FC<NewsletterModalProps> = ({ isOpen, onClos
     setEmail('');
     setSuccess(false);
     setError(null);
+    setDeliveryNote('');
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="card w-full max-w-md bg-[var(--color-surface)] border border-[var(--color-border)] p-6 sm:p-8 rounded-[var(--radius-md)] relative my-8">
+    <div className="modal-overlay">
+      <div className="card w-full max-w-lg bg-[var(--color-surface)] border border-[var(--color-border-light)] p-8 sm:p-10 rounded-2xl relative shadow-2xl">
         <button
           onClick={handleReset}
-          className="absolute top-5 right-5 text-[var(--color-gray)] hover:text-[var(--color-paper)] p-1 bg-transparent border-0 cursor-pointer"
+          className="absolute top-6 right-6 text-[var(--color-gray)] hover:text-[var(--color-paper)] p-2 rounded-lg bg-[var(--color-ink)] border border-[var(--color-border)] cursor-pointer transition-colors"
+          title="Close newsletter dialog"
         >
           <X className="w-5 h-5" />
         </button>
 
         {success ? (
-          <div className="py-4 text-center">
-            <div className="w-12 h-12 rounded-full bg-[var(--color-success)]/10 text-[var(--color-success)] flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="w-6 h-6" />
+          <div className="py-6 text-center">
+            <div className="w-16 h-16 rounded-full bg-[var(--color-success)]/10 border border-[var(--color-success)]/30 text-[var(--color-success)] flex items-center justify-center mx-auto mb-6">
+              <CheckCircle className="w-8 h-8" />
             </div>
-            <h2 className="text-xl font-bold text-[var(--color-paper)] mb-2">Subscribed to MendSeed Dispatch</h2>
-            <p className="text-xs text-[var(--color-gray-light)] leading-relaxed mb-6">
-              You will receive notifications based on your chosen preferences. You can unsubscribe anytime with one click.
+            <h2 className="text-2xl font-bold text-[var(--color-paper)] mb-3">
+              Subscribed to MendSeed Dispatch
+            </h2>
+            <p className="text-sm text-[var(--color-gray-light)] leading-relaxed mb-6 max-w-sm mx-auto">
+              {deliveryNote || 'You will receive notifications based on your chosen preferences. You can unsubscribe anytime with one click.'}
             </p>
-            <button onClick={handleReset} className="btn btn-primary w-full justify-center">
-              Close
+            <div className="p-4 bg-[var(--color-ink)] border border-[var(--color-border)] rounded-xl mb-6 text-xs text-[var(--color-gray)] font-mono">
+              Delivery Provider: <span className="text-[var(--color-lime)]">Resend Transactional API</span>
+            </div>
+            <button onClick={handleReset} className="btn btn-primary w-full py-3 justify-center text-sm">
+              Done
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-6">
             <div>
-              <div className="section-subheader flex items-center gap-1.5 mb-1 text-[var(--color-lime)]">
-                <Mail className="w-3.5 h-3.5" />
+              <div className="section-subheader flex items-center gap-2 mb-2 text-[var(--color-lime)]">
+                <Mail className="w-4 h-4" />
                 <span>MendSeed Dispatch</span>
               </div>
-              <h2 className="text-xl font-bold text-[var(--color-paper)]">Stay Informed on New Problems</h2>
-              <p className="text-xs text-[var(--color-gray)] mt-1">
-                Receive curated briefings on newly recognized friction and verified solutions.
+              <h2 className="text-2xl font-bold text-[var(--color-paper)] tracking-tight">
+                Stay Informed on New Problems
+              </h2>
+              <p className="text-sm text-[var(--color-gray)] mt-2 leading-relaxed">
+                Receive curated briefings on newly recognized friction, persistent issues, and verified open-source solutions.
               </p>
             </div>
 
             {error && (
-              <div className="p-2.5 bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/30 rounded-[var(--radius-sm)] text-xs text-[var(--color-danger)]">
+              <div className="p-4 bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/30 rounded-xl text-xs text-[var(--color-danger)]">
                 {error}
               </div>
             )}
 
-            <div>
-              <label className="label" htmlFor="dispatch-email">
+            <div className="space-y-2">
+              <label className="label text-xs uppercase tracking-wider font-mono text-[var(--color-gray)]" htmlFor="dispatch-email">
                 Your Email Address *
               </label>
               <input
@@ -97,43 +138,56 @@ export const NewsletterModal: React.FC<NewsletterModalProps> = ({ isOpen, onClos
                 placeholder="name@example.org"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="input font-mono text-xs"
+                className="w-full bg-[var(--color-ink)] text-[var(--color-paper)] text-sm font-mono px-4 py-3 rounded-xl border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-lime)] transition-colors"
                 required
               />
             </div>
 
-            <div className="space-y-2 pt-1">
-              <label className="flex items-center gap-2 text-xs text-[var(--color-paper)] cursor-pointer">
+            <div className="space-y-3 pt-2">
+              <label className="flex items-start gap-3 text-xs sm:text-sm text-[var(--color-paper)] cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={notifyNewIssues}
                   onChange={(e) => setNotifyNewIssues(e.target.checked)}
+                  className="mt-0.5 rounded border-[var(--color-border)] text-[var(--color-lime)] focus:ring-[var(--color-lime)] cursor-pointer"
                 />
-                <span>Alert me when new canonical issues are published</span>
+                <span className="leading-snug">Alert me when new canonical issues are consolidated</span>
               </label>
-              <label className="flex items-center gap-2 text-xs text-[var(--color-paper)] cursor-pointer">
+              <label className="flex items-start gap-3 text-xs sm:text-sm text-[var(--color-paper)] cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={weeklyDigest}
                   onChange={(e) => setWeeklyDigest(e.target.checked)}
+                  className="mt-0.5 rounded border-[var(--color-border)] text-[var(--color-lime)] focus:ring-[var(--color-lime)] cursor-pointer"
                 />
-                <span>Send weekly opportunity & resolution digest</span>
+                <span className="leading-snug">Send weekly QuietFray opportunity & resolution digest</span>
               </label>
             </div>
 
-            <div className="p-3 bg-[var(--color-ink)] rounded-[var(--radius-sm)] border border-[var(--color-border)] flex items-start gap-2 text-[11px] text-[var(--color-gray)]">
-              <ShieldCheck className="w-4 h-4 text-[var(--color-lime)] shrink-0 mt-0.5" />
+            <div className="p-4 bg-[var(--color-ink)] rounded-xl border border-[var(--color-border)] flex items-start gap-3 text-xs text-[var(--color-gray)] leading-relaxed">
+              <ShieldCheck className="w-5 h-5 text-[var(--color-lime)] shrink-0 mt-0.5" />
               <span>
-                <strong>Privacy guarantee:</strong> Newsletter emails are kept strictly isolated from problem reports, votes, and solution claims. Zero third-party trackers.
+                <strong className="text-[var(--color-paper)]">Privacy guarantee:</strong> Newsletter emails are kept strictly isolated from problem reports, votes, and solution claims. Zero third-party trackers. Powered by Resend.
               </span>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button type="button" onClick={handleReset} className="btn btn-ghost btn-sm">
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--color-border)]">
+              <button type="button" onClick={handleReset} className="btn btn-ghost text-sm px-5">
                 Cancel
               </button>
-              <button type="submit" disabled={isSubmitting} className="btn btn-primary btn-sm">
-                {isSubmitting ? 'Subscribing...' : 'Subscribe'}
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="btn btn-primary text-sm px-6 py-3 flex items-center gap-2"
+              >
+                {isSubmitting ? (
+                  <span>Subscribing...</span>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 text-black" />
+                    <span>Subscribe via Resend</span>
+                  </>
+                )}
               </button>
             </div>
           </form>
