@@ -1,5 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 
+declare const process: any;
+
 export default async function handler(_req: any, res: any) {
   try {
     const url = process.env.DATABASE_URL || process.env.VITE_NEON_DATABASE_URL;

@@ -1,5 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 
+declare const process: any;
+
 function getDb() {
   const url = process.env.DATABASE_URL || process.env.VITE_NEON_DATABASE_URL;
   if (!url) {
@@ -39,7 +41,7 @@ export default async function handler(req: any, res: any) {
 
       sqlQuery += ` ORDER BY last_activity_at DESC LIMIT ${Math.min(parseInt(limit as string) || 50, 100)}`;
 
-      const issues = await sql(sqlQuery, params);
+      const issues = await (sql as any)(sqlQuery, params);
 
       // Fetch frictions, solutions, and claims for these issues
       const issueIds = issues.map((i: any) => i.id);
