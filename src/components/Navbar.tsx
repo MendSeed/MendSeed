@@ -1,6 +1,6 @@
 // ============================================================================
 // MENDSEED NAVBAR
-// Editorial-brutalist navigation with mobile responsiveness
+// Spacious Editorial-Brutalist Navigation
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -33,15 +33,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <header className="sticky top-0 z-40 bg-[var(--color-ink)] border-b border-[var(--color-border)]">
-      <div className="page-container flex items-center justify-between h-16 gap-4">
+    <header className="sticky top-0 z-40 bg-[var(--color-ink)]/90 backdrop-blur-xl border-b border-[var(--color-border)]">
+      <div className="page-container flex items-center justify-between h-20 gap-6">
         {/* Brand Wordmark & Typographic Mark */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <button
             onClick={() => setActiveTab('explore')}
-            className="flex items-center gap-2.5 text-left bg-transparent border-0 cursor-pointer p-0"
+            className="flex items-center gap-3.5 text-left bg-transparent border-0 cursor-pointer p-0"
           >
-            <div className="w-8 h-8 rounded-[var(--radius-sm)] bg-[var(--color-ink-light)] border border-[var(--color-border)] flex items-center justify-center p-1.5 shadow-sm">
+            <div className="w-10 h-10 rounded-[var(--radius-md)] bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center p-2 shadow-sm">
               <svg viewBox="0 0 32 32" className="w-full h-full" fill="none">
                 <path
                   d="M8 24V12l4-4 4 8 4-8 4 4v12"
@@ -54,10 +54,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               </svg>
             </div>
             <div className="flex flex-col">
-              <span className="font-display font-bold text-lg tracking-tight text-[var(--color-paper)] leading-none">
+              <span className="font-display font-bold text-xl tracking-tight text-[var(--color-paper)] leading-none">
                 MEND<span className="text-[var(--color-lime)]">SEED</span>
               </span>
-              <span className="font-mono text-[9px] uppercase tracking-wider text-[var(--color-gray)] leading-tight mt-0.5">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--color-gray)] leading-tight mt-1">
                 Problem Discovery
               </span>
             </div>
@@ -65,15 +65,15 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Desktop Nav Links */}
-        <nav className="hidden md:flex items-center gap-1 lg:gap-2" aria-label="Main Navigation">
+        <nav className="hidden md:flex items-center gap-2 lg:gap-3" aria-label="Main Navigation">
           {navItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`px-3 py-1.5 rounded-[var(--radius-sm)] font-display text-sm tracking-wide transition-colors cursor-pointer border-0 bg-transparent ${
+              className={`px-4 py-2 rounded-[var(--radius-md)] font-display text-sm tracking-wide transition-all cursor-pointer border-0 bg-transparent ${
                 activeTab === item.id
-                  ? 'text-[var(--color-lime)] font-semibold bg-[var(--color-surface)]'
-                  : 'text-[var(--color-gray)] hover:text-[var(--color-paper)]'
+                  ? 'text-[var(--color-lime)] font-semibold bg-[var(--color-surface)] shadow-sm'
+                  : 'text-[var(--color-gray)] hover:text-[var(--color-paper)] hover:bg-[var(--color-surface)]/50'
               }`}
             >
               {item.label}
@@ -82,21 +82,21 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         {/* Search & Report Actions */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3 sm:gap-4">
           {/* Quick Search Input */}
           <div className="relative hidden sm:block">
-            <Search className="w-4 h-4 text-[var(--color-gray)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-[var(--color-gray)] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               placeholder="Search problems..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-[var(--color-surface)] text-[var(--color-paper)] text-xs font-mono pl-9 pr-3 py-1.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-lime)] w-36 lg:w-48 transition-all"
+              className="bg-[var(--color-surface)] text-[var(--color-paper)] text-xs font-mono pl-10 pr-4 py-2.5 rounded-[var(--radius-md)] border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-lime)] w-44 lg:w-64 transition-all"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-gray)] hover:text-[var(--color-paper)] bg-transparent border-0 cursor-pointer p-0.5"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-gray)] hover:text-[var(--color-paper)] bg-transparent border-0 cursor-pointer p-0.5"
                 title="Clear search"
               >
                 <X className="w-3.5 h-3.5" />
@@ -107,7 +107,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Mobile search toggle */}
           <button
             onClick={() => setSearchOpen(!searchOpen)}
-            className="sm:hidden p-2 text-[var(--color-gray)] hover:text-[var(--color-paper)] bg-transparent border border-[var(--color-border)] rounded-[var(--radius-sm)] cursor-pointer"
+            className="sm:hidden p-2.5 text-[var(--color-gray)] hover:text-[var(--color-paper)] bg-transparent border border-[var(--color-border)] rounded-[var(--radius-md)] cursor-pointer"
             aria-label="Toggle search"
           >
             <Search className="w-4 h-4" />
@@ -116,17 +116,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Primary Action: Report a Problem */}
           <button
             onClick={onOpenReport}
-            className="btn btn-primary btn-sm flex items-center gap-1.5 shadow-sm"
+            className="btn btn-primary btn-sm flex items-center gap-2 px-4 py-2.5 text-xs tracking-wider"
           >
             <Plus className="w-4 h-4" />
             <span className="hidden xs:inline">Report a problem</span>
             <span className="xs:hidden">Report</span>
           </button>
 
-          {/* Mobile Menu Hamburger */}
+          {/* Mobile Menu Toggle */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 text-[var(--color-gray)] hover:text-[var(--color-paper)] bg-transparent border border-[var(--color-border)] rounded-[var(--radius-sm)] cursor-pointer"
+            className="md:hidden p-2.5 text-[var(--color-gray)] hover:text-[var(--color-paper)] bg-transparent border border-[var(--color-border)] rounded-[var(--radius-md)] cursor-pointer"
             aria-label="Toggle navigation menu"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -134,26 +134,34 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Mobile search expandable */}
+      {/* Mobile Search Overlay */}
       {searchOpen && (
-        <div className="sm:hidden px-4 py-2 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
+        <div className="sm:hidden border-t border-[var(--color-border)] p-4 bg-[var(--color-surface)]">
           <div className="relative">
             <Search className="w-4 h-4 text-[var(--color-gray)] absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search problems by keyword..."
+              placeholder="Search problems or frictions..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[var(--color-ink)] text-[var(--color-paper)] text-sm font-mono pl-9 pr-3 py-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-lime)]"
+              className="w-full bg-[var(--color-ink)] text-[var(--color-paper)] text-sm font-mono pl-9 pr-9 py-2.5 rounded-[var(--radius-md)] border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-lime)]"
               autoFocus
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-gray)]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {/* Mobile dropdown menu */}
+      {/* Mobile Dropdown Nav Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-[var(--color-border)] bg-[var(--color-ink)] px-4 py-3 flex flex-col gap-1">
+        <div className="md:hidden border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-6 flex flex-col gap-2">
           {navItems.map((item) => (
             <button
               key={item.id}
@@ -161,9 +169,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 setActiveTab(item.id);
                 setMobileMenuOpen(false);
               }}
-              className={`text-left px-3 py-2 rounded-[var(--radius-sm)] font-display text-base transition-colors border-0 bg-transparent ${
+              className={`text-left px-4 py-3 rounded-[var(--radius-md)] font-display text-base transition-colors ${
                 activeTab === item.id
-                  ? 'text-[var(--color-lime)] font-semibold bg-[var(--color-surface)]'
+                  ? 'text-[var(--color-lime)] font-bold bg-[var(--color-ink)]'
                   : 'text-[var(--color-gray)] hover:text-[var(--color-paper)]'
               }`}
             >
