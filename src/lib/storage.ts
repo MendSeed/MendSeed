@@ -84,40 +84,67 @@ function saveStorage<T>(key: string, data: T): void {
 }
 
 /**
- * Computes QuietFray score for an issue based on its temporal state.
+ * Computes QuietFray score for an issue based on its real temporal event history.
+ * Ingests actual event timestamps and marks rather than count-based approximations.
  */
 export function computeQuietFrayForIssue(issue: CanonicalIssue) {
   const publishedTime = new Date(issue.publishedAt).getTime();
   const now = new Date().getTime();
-  const unresolvedDays = Math.max((now - publishedTime) / (1000 * 60 * 60 * 24), 0.1);
+  const unresolvedDays = Math.max((now - publishedTime) / (1000 * 60 * 60 * 24), 0.01);
 
   const events: TemporalEvent[] = [];
-  const reportsCount = Math.max(issue.reportCount, 1);
-  for (let i = 0; i < reportsCount; i++) {
-    const t = (i / reportsCount) * (unresolvedDays * 0.9);
+
+  // 1. Gather actual recorded reports for this issue
+  const matchingReports = inMemoryReports.filter((r) => r.canonicalIssueId === issue.id);
+  if (matchingReports.length > 0) {
+    for (const rep of matchingReports) {
+      const repTime = new Date(rep.createdAt).getTime();
+      const tDays = Math.max(0, (repTime - publishedTime) / (1000 * 60 * 60 * 24));
+      events.push({
+        timeDays: tDays,
+        channel: 'REPORT',
+        mark: {
+          confidence: rep.confidenceProxy ?? 0.88,
+          diversity: rep.diversityProxy ?? 0.82,
+          burstSimilarity: 0.1,
+        },
+      });
+    }
+  } else {
+    // Baseline creation report event at t=0
     events.push({
-      timeDays: t,
+      timeDays: 0,
       channel: 'REPORT',
-      mark: { confidence: 0.85, diversity: 0.8, burstSimilarity: 0.1 },
+      mark: { confidence: 0.90, diversity: 0.85, burstSimilarity: 0.05 },
     });
   }
 
-  const upvotes = Math.max(issue.supportCount, 0);
-  const step = unresolvedDays / Math.max(upvotes, 1);
-  for (let i = 0; i < Math.min(upvotes, 50); i++) {
+  // 2. Gather actual recorded support/downvote events for this issue
+  const matchingVotes = inMemoryVotes.filter((v) => v.canonicalIssueId === issue.id);
+  for (const vote of matchingVotes) {
+    const voteTime = new Date(vote.createdAt).getTime();
+    const tDays = Math.max(0, (voteTime - publishedTime) / (1000 * 60 * 60 * 24));
     events.push({
-      timeDays: i * step,
+      timeDays: tDays,
       channel: 'VOTE',
-      direction: 'UP',
+      direction: vote.direction === 'DOWN' ? 'DOWN' : 'UP',
     });
   }
+
+  // 3. Check for actual reopen events in the audit log
+  const hasReopenEvent = inMemoryEvents.some(
+    (e) => e.canonicalIssueId === issue.id && e.type === 'REOPENED'
+  ) || issue.status === 'REOPENED';
+
+  // Sort events strictly in continuous ascending chronological order
+  events.sort((a, b) => a.timeDays - b.timeDays);
 
   const res = computeBatchReference(events, {
     categorySuccesses: 10,
     categoryTotal: 30,
     unresolvedDays,
-    hasReopen: issue.status === 'REOPENED',
-    currentHorizonDays: unresolvedDays + 1,
+    hasReopen: hasReopenEvent,
+    currentHorizonDays: unresolvedDays + 0.5,
   });
 
   return {
@@ -128,20 +155,13 @@ export function computeQuietFrayForIssue(issue: CanonicalIssue) {
     downvotes: issue.downvoteCount,
     reportCount: issue.reportCount,
     unresolvedDays,
-    reopenCount: issue.status === 'REOPENED' ? 1 : 0,
+    reopenCount: hasReopenEvent ? 1 : 0,
     fastIntensity: res.state.x_V_f,
     slowIntensity: res.state.x_V_s,
     burstSimilarity: 0.1,
     categoryPrior: 0.33,
     calculatedAt: new Date().toISOString(),
-    signals: {
-      temporalEvidence: res.state.sum_log_ratio_V + res.state.sum_log_ratio_R,
-      reportMarks: res.state.ell_marks,
-      voteDirection: res.state.ell_vote,
-      survivalPersistence: 1.2,
-      reopenSignal: issue.status === 'REOPENED' ? 1.25 : -0.8,
-      categoryPriorScore: -0.7,
-    },
+    signals: res.signals,
   };
 }
 

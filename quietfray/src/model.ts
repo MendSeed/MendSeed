@@ -307,7 +307,18 @@ export function computeBatchReference(
   events: TemporalEvent[],
   ctx: IssueContext,
   params: QuietFrayParams = DEFAULT_QUIETFRAY_PARAMS
-): { score: number; state: QuietFrayOnlineState } {
+): {
+  score: number;
+  state: QuietFrayOnlineState;
+  signals: {
+    temporalEvidence: number;
+    reportMarks: number;
+    voteDirection: number;
+    survivalPersistence: number;
+    reopenSignal: number;
+    categoryPriorScore: number;
+  };
+} {
   // Sort events chronologically
   const sorted = [...events].sort((a, b) => a.timeDays - b.timeDays);
   const state = createInitialState(0);
@@ -315,5 +326,5 @@ export function computeBatchReference(
     processEventOnline(state, ev, params);
   }
   const result = computeUnifiedScore(state, ctx, params);
-  return { score: result.score, state };
+  return { score: result.score, state, signals: result.signals };
 }
