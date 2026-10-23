@@ -19,6 +19,7 @@ import type { CanonicalIssue, Category } from '../types';
 import { CATEGORY_LABELS } from '../types';
 import { findCandidateIssues, submitProblemReport } from '../lib/storage';
 import { generateCapability, storeCapability } from '../lib/capabilities';
+import { getCurrentUser } from '../lib/auth';
 
 interface ReportProblemModalProps {
   isOpen: boolean;
@@ -35,11 +36,13 @@ export const ReportProblemModal: React.FC<ReportProblemModalProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [acceptanceCriteria, setAcceptanceCriteria] = useState('');
   const [category, setCategory] = useState<Category>('SOFTWARE_APPS');
   const [candidateIssues, setCandidateIssues] = useState<CanonicalIssue[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | undefined>(undefined);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const currentUser = getCurrentUser();
   const [successInfo, setSuccessInfo] = useState<{
     reportId: string;
     token: string;
@@ -92,12 +95,19 @@ export const ReportProblemModal: React.FC<ReportProblemModalProps> = ({
       // Generate anonymous capability token for reporter
       const reporterToken = generateCapability('report');
 
+      const criteriaList = acceptanceCriteria
+        .split('\n')
+        .map((c) => c.replace(/^[-*•0-9.]+\s*/, '').trim())
+        .filter(Boolean);
+
       const res = await submitProblemReport(
         {
           title,
           description,
           category,
           candidateIssueId: selectedCandidateId,
+          acceptanceCriteria: criteriaList.length > 0 ? criteriaList : undefined,
+          reporterUserId: currentUser?.id,
         },
         reporterToken
       );
@@ -206,6 +216,20 @@ export const ReportProblemModal: React.FC<ReportProblemModalProps> = ({
               <p className="text-xs text-[var(--color-gray)] mt-1">
                 Describe the broken workflow, unmet need, or recurring friction you experienced. No account required.
               </p>
+
+              {/* Author status banner */}
+              <div className="mt-3 py-2 px-3 rounded-lg bg-[var(--color-ink)] border border-[var(--color-border)] flex items-center justify-between text-xs font-mono">
+                {currentUser ? (
+                  <span className="text-[var(--color-lime)] flex items-center gap-1.5 font-bold">
+                    <span>Logged in as @{currentUser.username}</span>
+                    <span className="text-[var(--color-gray)] font-normal">(+5 Scoping Points on submission)</span>
+                  </span>
+                ) : (
+                  <span className="text-[var(--color-gray-light)]">
+                    Posting as Anonymous Guest (No account needed)
+                  </span>
+                )}
+              </div>
             </div>
 
             {error && (
@@ -270,6 +294,26 @@ export const ReportProblemModal: React.FC<ReportProblemModalProps> = ({
               <span className="text-[10px] font-mono text-[var(--color-gray-dark)] mt-1 block">
                 {description.length} / 5000 characters
               </span>
+            </div>
+
+            {/* Acceptance Criteria (Kaggle/Devpost Problem Scoping) */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="label mb-0" htmlFor="report-criteria">
+                  Acceptance Criteria for Solvers (Optional)
+                </label>
+                <span className="text-[11px] font-mono text-[var(--color-lime)]">Problem Scoping</span>
+              </div>
+              <p className="text-[11px] text-[var(--color-gray)] mb-2">
+                What would prove this problem is resolved? (One criterion per line, e.g. "Auto-saves draft to localStorage every 10s")
+              </p>
+              <textarea
+                id="report-criteria"
+                placeholder="- User draft is preserved across browser session expiration&#10;- Recovery prompt restores form data seamlessly without server rejection"
+                value={acceptanceCriteria}
+                onChange={(e) => setAcceptanceCriteria(e.target.value)}
+                className="input min-h-[85px] font-mono text-xs"
+              />
             </div>
 
             {/* Real-time Inline Candidates (Section 7.1) */}

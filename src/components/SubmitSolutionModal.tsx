@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { AlertCircle, CheckCircle, Copy, Hammer, Key, X } from 'lucide-react';
 import { submitSolutionReport } from '../lib/storage';
 import { generateCapability, storeCapability } from '../lib/capabilities';
+import { getCurrentUser } from '../lib/auth';
 
 interface SubmitSolutionModalProps {
   isOpen: boolean;
@@ -33,12 +34,12 @@ export const SubmitSolutionModal: React.FC<SubmitSolutionModalProps> = ({
   const [projectName, setProjectName] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
   const [demoUrl, setDemoUrl] = useState('');
-  const docsUrl = '';
-  const verificationEvidence = '';
+  const [verificationEvidence, setVerificationEvidence] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successToken, setSuccessToken] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState(false);
+  const currentUser = getCurrentUser();
 
   if (!isOpen) return null;
 
@@ -48,7 +49,7 @@ export const SubmitSolutionModal: React.FC<SubmitSolutionModalProps> = ({
     setIsSubmitting(true);
 
     try {
-      // Generate anonymous capability token for solution submitter
+      // Generate capability token for solution submitter
       const capabilityToken = generateCapability('solution');
 
       const sol = await submitSolutionReport(
@@ -57,13 +58,12 @@ export const SubmitSolutionModal: React.FC<SubmitSolutionModalProps> = ({
           title,
           summary,
           aspectsAddressed: aspects.split('\n').filter((a) => a.trim().length > 0),
-          usageInstructions: instructions,
+          usageInstructions: instructions || 'See GitHub repository for setup instructions.',
           limitations,
           stage,
-          projectName,
+          projectName: projectName || (currentUser ? `${currentUser.username} Fix` : undefined),
           githubUrl: githubUrl.trim() || undefined,
           demoUrl: demoUrl.trim() || undefined,
-          docsUrl: docsUrl.trim() || undefined,
           verificationEvidence: verificationEvidence.trim() || undefined,
         },
         capabilityToken
@@ -266,10 +266,30 @@ export const SubmitSolutionModal: React.FC<SubmitSolutionModalProps> = ({
               </label>
               <textarea
                 id="sol-aspects"
-                placeholder="Preserves form progress locally on 401\nProvides countdown timer before session expires"
+                placeholder="Preserves form progress locally on 401&#10;Provides countdown timer before session expires"
                 value={aspects}
                 onChange={(e) => setAspects(e.target.value)}
                 className="input min-h-[70px]"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="label mb-0" htmlFor="sol-evidence">
+                  Verification Evidence & Testing Instructions *
+                </label>
+                <span className="text-[11px] font-mono text-[var(--color-lime)]">Proof Required</span>
+              </div>
+              <p className="text-[11px] text-[var(--color-gray)] mb-2">
+                Provide instructions or evidence so reviewers can verify your solution satisfies the acceptance criteria:
+              </p>
+              <textarea
+                id="sol-evidence"
+                placeholder="Run `npm test` or visit demo URL. Click 'Expire Session' button; observe that form state is automatically recovered."
+                value={verificationEvidence}
+                onChange={(e) => setVerificationEvidence(e.target.value)}
+                className="input min-h-[85px] font-mono text-xs"
+                required
               />
             </div>
 

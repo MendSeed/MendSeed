@@ -178,10 +178,27 @@ export interface CanonicalIssue {
   lastActivityAt: string;
   summaryVersion: number;
   observedFrictions: ObservedFriction[];
+  acceptanceCriteria?: string[]; // Defined criteria for what constitutes a valid fix
   activeClaim?: WorkClaim;
+  claimedSolver?: {
+    userId: string;
+    username: string;
+    name: string;
+    avatarUrl?: string;
+    claimedAt: string;
+    notes?: string;
+  };
   solutions: SolutionReport[];
   resolutionReportId?: string;
   resolutionEvidence?: string;
+  closedBy?: {
+    userId: string;
+    username: string;
+    closedAt: string;
+    solutionId: string;
+  };
+  discussions?: DiscussionComment[];
+  reporterUserId?: string; // Optional if submitted by authenticated user
   quietFray?: QuietFrayFeatures;
 }
 
@@ -193,3 +210,75 @@ export interface NewsletterSubscriber {
   weeklyDigest: boolean;
   subscribedAt: string;
 }
+
+// ============================================================================
+// SOLVER ACCOUNTS, DISCUSSION THREADS & GAMIFICATION TYPES
+// Aligned with Community Scoping Hub Vision (GitHub + Kaggle + Devpost)
+// ============================================================================
+
+export interface UserProfile {
+  id: string;
+  username: string; // unique, e.g. "johndoe", clean profile URL /johndoe
+  name: string;
+  email: string;
+  avatarUrl: string;
+  isPublicProfile: boolean;
+  bio?: string;
+  githubUsername?: string;
+  githubUrl?: string;
+  skills: string[];
+  preferredTech: string[];
+  streakDays: number;
+  points: number;
+  verifiedSolutionsCount: number;
+  problemsLoggedCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DiscussionComment {
+  id: string;
+  canonicalIssueId: string;
+  parentId?: string; // For nested replies / threading
+  author: {
+    userId?: string;
+    username: string;
+    name: string;
+    avatarUrl?: string;
+    isGuest: boolean;
+    isSolver: boolean;
+    isMaintainer: boolean;
+  };
+  content: string;
+  reactions: Record<string, number>; // e.g. { '👍': 4, '🚀': 2, '❤️': 1 }
+  solutionId?: string; // Optional reference to a linked solution proposal
+  createdAt: string;
+}
+
+export type PointReason =
+  | 'PROBLEM_SCOPED'
+  | 'EVIDENCE_ADDED'
+  | 'SOLUTION_ACCEPTED'
+  | 'VERIFICATION_CONDUCTED'
+  | 'STREAK_BONUS';
+
+export interface PointTransaction {
+  id: string;
+  userId: string;
+  points: number;
+  reason: PointReason;
+  description: string;
+  relatedId?: string; // e.g. issueId or solutionId
+  timestamp: string;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  user: UserProfile;
+  score: number;
+  verifiedSolutions: number;
+  problemsScoped: number;
+  streakDays: number;
+  trend: 'up' | 'down' | 'same';
+}
+

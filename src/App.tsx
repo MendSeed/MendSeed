@@ -1,12 +1,12 @@
 // ============================================================================
 // MENDSEED MASTER APPLICATION
-// The public problem-discovery and solution-development platform
-// Realtime Synced with Neon PostgreSQL & pgvector (Zero Dummy Data)
-// Spacious Layout with Generous Gaps & Breathing Room
+// Problem-to-Solution Scoping Hub (GitHub + Kaggle + Devpost Hybrid)
+// Powered by QuietFray Mathematical Model & Realtime Neon Persistence
+// Styled with UI/UX Pro Max Dark Mode Design System
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
-import type { CanonicalIssue, Category, IssueEvent, IssueStatus } from './types';
+import type { CanonicalIssue, Category, IssueEvent, IssueStatus, UserProfile } from './types';
 import { CATEGORY_LABELS } from './types';
 import {
   castSupportVote,
@@ -17,6 +17,7 @@ import {
   syncWithNeon,
 } from './lib/storage';
 import { getOrCreateVoterToken } from './lib/capabilities';
+import { getCurrentUser, onAuthStateChange, RESERVED_USERNAMES, signOut } from './lib/auth';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { RecentActivity } from './components/RecentActivity';
@@ -27,6 +28,10 @@ import { ProblemEvidenceModal } from './components/ProblemEvidenceModal';
 import { ReportProblemModal } from './components/ReportProblemModal';
 import { ObservatoryView } from './components/ObservatoryView';
 import { HowItWorksView } from './components/HowItWorksView';
+import { LeaderboardView } from './components/LeaderboardView';
+import { UserProfileView } from './components/UserProfileView';
+import { GuidelinesView } from './components/GuidelinesView';
+import { AuthModal } from './components/AuthModal';
 import { NewsletterModal } from './components/NewsletterModal';
 import { PolicyModal } from './components/PolicyModal';
 import { Footer } from './components/Footer';
@@ -43,6 +48,11 @@ export function App() {
   const [publicEvents, setPublicEvents] = useState<IssueEvent[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<CanonicalIssue | null>(null);
 
+  // Auth & Profile state
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(getCurrentUser());
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [viewProfileUsername, setViewProfileUsername] = useState<string | null>(null);
+
   // Modals
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isNewsletterModalOpen, setIsNewsletterModalOpen] = useState(false);
@@ -51,6 +61,60 @@ export function App() {
   // Voter state
   const [voterHash, setVoterHash] = useState<string>('');
   const [userVotes, setUserVotes] = useState<Record<string, 'UP' | 'DOWN' | null>>({});
+
+  // Sync auth state listener
+  useEffect(() => {
+    const unsub = onAuthStateChange((user) => {
+      setCurrentUser(user);
+    });
+    return unsub;
+  }, []);
+
+  // Parse path for dedicated user profile URL (e.g. /johndoe or /@johndoe)
+  useEffect(() => {
+    const path = window.location.pathname.replace(/^\/+/, '').trim();
+    if (path) {
+      const clean = path.replace(/^@/, '').toLowerCase();
+      if (!RESERVED_USERNAMES.has(clean) && clean.length > 1) {
+        setViewProfileUsername(clean);
+        setActiveTab('profile');
+      }
+    }
+
+    const handlePopState = () => {
+      const p = window.location.pathname.replace(/^\/+/, '').trim();
+      if (!p) {
+        setViewProfileUsername(null);
+        setActiveTab('explore');
+      } else {
+        const clean = p.replace(/^@/, '').toLowerCase();
+        if (!RESERVED_USERNAMES.has(clean)) {
+          setViewProfileUsername(clean);
+          setActiveTab('profile');
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleNavigateToProfile = (username: string) => {
+    const clean = username.replace(/^@/, '').trim();
+    setViewProfileUsername(clean);
+    setActiveTab('profile');
+    try {
+      window.history.pushState(null, '', `/${clean}`);
+    } catch {}
+  };
+
+  const handleBackFromProfile = () => {
+    setViewProfileUsername(null);
+    setActiveTab('explore');
+    try {
+      window.history.pushState(null, '', '/');
+    } catch {}
+  };
 
   // Initialize voter capability token
   useEffect(() => {
@@ -122,21 +186,41 @@ export function App() {
   );
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--color-ink)] text-[var(--color-paper)]">
+    <div className="min-h-screen flex flex-col bg-[#080907] text-[#F8FAFC]">
       {/* Navbar */}
       <Navbar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={(tab) => {
+          setViewProfileUsername(null);
+          setActiveTab(tab);
+          try {
+            window.history.pushState(null, '', '/');
+          } catch {}
+        }}
         onOpenReport={() => setIsReportModalOpen(true)}
         searchQuery={searchQuery}
         setSearchQuery={(q) => {
           setSearchQuery(q);
           if (activeTab !== 'explore') setActiveTab('explore');
         }}
+        currentUser={currentUser}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onSelectUser={handleNavigateToProfile}
+        onSignOut={() => signOut()}
       />
 
       {/* Main Content Area */}
       <main className="flex-1">
+        {/* Profile Page View */}
+        {activeTab === 'profile' && viewProfileUsername && (
+          <UserProfileView
+            username={viewProfileUsername}
+            onBack={handleBackFromProfile}
+            onSelectIssue={(iss) => setSelectedIssue(iss)}
+          />
+        )}
+
+        {/* Explore Feed */}
         {activeTab === 'explore' && (
           <>
             <Hero
@@ -151,11 +235,11 @@ export function App() {
               isNeonConnected={true}
             />
 
-            {/* Dashboard 2-Column Section with Spacious Gap */}
-            <div id="feed-section" className="page-container py-16 sm:py-20 lg:py-24">
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 xl:gap-16 items-start">
+            {/* Dashboard 2-Column Section */}
+            <div id="feed-section" className="page-container py-14 sm:py-16 lg:py-20">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 xl:gap-12 items-start">
                 {/* Primary Column: Problem Stream & Controls (8 cols) */}
-                <div className="lg:col-span-8 flex flex-col gap-10">
+                <div className="lg:col-span-8 flex flex-col gap-8">
                   <ProblemStream
                     issues={issues}
                     rankingMode={rankingMode}
@@ -172,8 +256,36 @@ export function App() {
                   />
                 </div>
 
-                {/* Secondary Column: Live Stream & Architecture Widgets (4 cols) */}
-                <div className="lg:col-span-4 flex flex-col gap-8">
+                {/* Secondary Column: Live Stream & Widgets (4 cols) */}
+                <div className="lg:col-span-4 flex flex-col gap-6">
+                  {/* Solver Callout Card */}
+                  <div className="card p-6 bg-gradient-to-br from-[#1B2336] to-[#111622] border border-[#27354A]">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Zap className="w-4 h-4 text-[#22C55E]" />
+                      <h3 className="font-mono text-xs uppercase tracking-wider text-white font-bold">
+                        Solve & Earn Reputation
+                      </h3>
+                    </div>
+                    <p className="text-xs text-[#94A3B8] leading-relaxed mb-4">
+                      Developers can claim open community friction, link GitHub PRs, and earn verified solver rankings.
+                    </p>
+                    {currentUser ? (
+                      <button
+                        onClick={() => handleNavigateToProfile(currentUser.username)}
+                        className="btn btn-secondary btn-sm w-full font-mono text-xs text-[#22C55E] border-[#22C55E]/40"
+                      >
+                        View My Solver Profile (@{currentUser.username})
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setIsAuthModalOpen(true)}
+                        className="btn btn-primary btn-sm w-full font-mono text-xs"
+                      >
+                        Join as Verified Solver
+                      </button>
+                    )}
+                  </div>
+
                   {/* Live Activity Feed Widget */}
                   <RecentActivity
                     events={publicEvents}
@@ -185,28 +297,24 @@ export function App() {
                   />
 
                   {/* Friction Landscape Mini Widget */}
-                  <div className="card p-7 flex flex-col gap-5">
+                  <div className="card p-6 flex flex-col gap-4 border border-[#22281F]">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <Compass className="w-4 h-4 text-[var(--color-lime)]" />
-                        <h3 className="font-mono text-xs uppercase tracking-wider text-[var(--color-gray-light)] font-bold">
+                      <div className="flex items-center gap-2">
+                        <Compass className="w-4 h-4 text-[#22C55E]" />
+                        <h3 className="font-mono text-xs uppercase tracking-wider text-[#94A3B8] font-bold">
                           Friction Landscape
                         </h3>
                       </div>
                       <button
                         onClick={() => setActiveTab('friction-map')}
-                        className="text-xs font-mono text-[var(--color-lime)] hover:underline flex items-center gap-1 cursor-pointer bg-transparent border-0 p-0"
+                        className="text-xs font-mono text-[#22C55E] hover:underline flex items-center gap-1 cursor-pointer bg-transparent border-0 p-0"
                       >
                         <span>Full Map</span>
                         <ArrowRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
 
-                    <p className="text-xs sm:text-sm text-[var(--color-gray)] leading-relaxed">
-                      Cross-category distribution of obstacles verified by the community.
-                    </p>
-
-                    <div className="flex flex-col gap-2.5">
+                    <div className="flex flex-col gap-2">
                       {(Object.keys(CATEGORY_LABELS) as Category[]).slice(0, 5).map((cat) => {
                         const count = issues.filter((i) => i.category === cat).length;
                         return (
@@ -217,14 +325,14 @@ export function App() {
                               const el = document.getElementById('feed-section');
                               if (el) el.scrollIntoView({ behavior: 'smooth' });
                             }}
-                            className={`flex items-center justify-between px-3.5 py-2.5 rounded-[var(--radius-md)] text-xs sm:text-sm cursor-pointer transition-all ${
+                            className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs cursor-pointer transition-all ${
                               selectedCategory === cat
-                                ? 'bg-[var(--color-lime)]/15 text-[var(--color-lime)] border border-[var(--color-lime)]/40 font-medium'
-                                : 'bg-[var(--color-surface)] text-[var(--color-gray-light)] hover:text-white border border-[var(--color-border)]'
+                                ? 'bg-[#22C55E]/15 text-[#22C55E] border border-[#22C55E]/40 font-medium'
+                                : 'bg-[#111622] text-[#94A3B8] hover:text-white border border-[#27354A]'
                             }`}
                           >
                             <span className="truncate">{CATEGORY_LABELS[cat]}</span>
-                            <span className="font-mono text-xs px-2 py-0.5 rounded bg-black/40">
+                            <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-black/40">
                               {count}
                             </span>
                           </div>
@@ -233,24 +341,24 @@ export function App() {
                     </div>
                   </div>
 
-                  {/* QuietFray Model Telemetry Widget */}
-                  <div className="card p-7 flex flex-col gap-4 bg-gradient-to-b from-[#131612] to-[#0D100C]">
-                    <div className="flex items-center gap-2.5">
-                      <Zap className="w-4 h-4 text-[var(--color-lime)]" />
-                      <h3 className="font-mono text-xs uppercase tracking-wider text-[var(--color-gray-light)] font-bold">
+                  {/* QuietFray Engine Telemetry Widget */}
+                  <div className="card p-6 flex flex-col gap-3 bg-gradient-to-b from-[#131612] to-[#0D100C] border border-[#22281F]">
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-[#22C55E]" />
+                      <h3 className="font-mono text-xs uppercase tracking-wider text-white font-bold">
                         QuietFray v0.1 Engine
                       </h3>
                     </div>
 
-                    <p className="text-xs sm:text-sm text-[var(--color-gray)] leading-relaxed">
-                      Temporal point-process scoring with dual-timescale Hawkes excitation (subcritical mass $\nu = 0.5049$) protects genuine problems from viral manipulation.
+                    <p className="text-xs text-[#94A3B8] leading-relaxed">
+                      Pure-mathematics marked Hawkes point process (\(\nu = 0.5049\)) prioritizes chronic community suffering over transient viral outrage.
                     </p>
 
-                    <div className="pt-3 border-t border-[var(--color-border)] flex items-center justify-between text-xs font-mono text-[var(--color-gray-dark)]">
-                      <span>Verified Closure: Sec 8.5</span>
+                    <div className="pt-2 border-t border-[#22281F] flex items-center justify-between text-xs font-mono text-[#64748B]">
+                      <span>SPRT Hypotheses: H1 vs H0</span>
                       <button
                         onClick={() => setActiveTab('observatory')}
-                        className="text-[var(--color-lime)] hover:underline bg-transparent border-0 p-0 cursor-pointer font-bold"
+                        className="text-[#22C55E] hover:underline bg-transparent border-0 p-0 cursor-pointer font-bold"
                       >
                         Observatory &rarr;
                       </button>
@@ -262,8 +370,21 @@ export function App() {
           </>
         )}
 
+        {/* Leaderboards Tab */}
+        {activeTab === 'leaderboard' && (
+          <LeaderboardView
+            onSelectUser={handleNavigateToProfile}
+            onOpenNewsletter={() => setIsNewsletterModalOpen(true)}
+            onOpenAuth={() => setIsAuthModalOpen(true)}
+          />
+        )}
+
+        {/* Community Guidelines Tab */}
+        {activeTab === 'guidelines' && <GuidelinesView />}
+
+        {/* Top 10 View */}
         {activeTab === 'top10' && (
-          <div className="py-16 sm:py-24">
+          <div className="py-14 sm:py-20">
             <TopTen
               issues={issues}
               onSelectIssue={setSelectedIssue}
@@ -273,8 +394,9 @@ export function App() {
           </div>
         )}
 
+        {/* Friction Map View */}
         {activeTab === 'friction-map' && (
-          <div className="py-16 sm:py-24">
+          <div className="py-14 sm:py-20">
             <FrictionMap
               issues={issues}
               onSelectCategory={(cat) => {
@@ -285,6 +407,7 @@ export function App() {
           </div>
         )}
 
+        {/* Observatory View */}
         {activeTab === 'observatory' && (
           <ObservatoryView
             issues={issues}
@@ -292,6 +415,7 @@ export function App() {
           />
         )}
 
+        {/* How It Works View */}
         {activeTab === 'how-it-works' && (
           <HowItWorksView
             onOpenReport={() => setIsReportModalOpen(true)}
@@ -326,6 +450,17 @@ export function App() {
         onVote={handleVote}
         userVote={selectedIssue ? userVotes[selectedIssue.id] : null}
         onRefresh={refreshData}
+        onSelectUser={handleNavigateToProfile}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+      />
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={(user) => {
+          setCurrentUser(user);
+          handleNavigateToProfile(user.username);
+        }}
       />
 
       <NewsletterModal

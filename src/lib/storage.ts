@@ -15,8 +15,11 @@ import type {
   SolutionStage,
   SupportVote,
   WorkClaim,
+  DiscussionComment,
+  UserProfile,
 } from '../types';
 import { hashCapability } from './capabilities';
+import { awardPoints } from './auth';
 import type { TemporalEvent } from '../../quietfray/src/model';
 import { computeBatchReference } from '../../quietfray/src/model';
 import { generateEmbedding } from './gemini';
@@ -511,6 +514,8 @@ export interface ProblemReportInput {
   description: string;
   category: Category;
   candidateIssueId?: string;
+  acceptanceCriteria?: string[];
+  reporterUserId?: string;
 }
 
 /**
@@ -547,6 +552,10 @@ export async function submitProblemReport(
       summaryVersion: 1,
       publishedAt: now,
       lastActivityAt: now,
+      acceptanceCriteria: input.acceptanceCriteria && input.acceptanceCriteria.length > 0
+        ? input.acceptanceCriteria
+        : ['Clear reproducible problem description', 'Working verifiable solution or public demo'],
+      reporterUserId: input.reporterUserId,
       observedFrictions: [
         {
           id: `fric_${Date.now()}`,
@@ -559,15 +568,24 @@ export async function submitProblemReport(
         },
       ],
       solutions: [],
+      discussions: [],
     };
 
     newIssue.quietFray = computeQuietFrayForIssue(newIssue);
     inMemoryIssues.unshift(newIssue);
+
+    // Award +5 points to authenticated reporter for scoping an accepted problem
+    if (input.reporterUserId) {
+      awardPoints(input.reporterUserId, 5, 'PROBLEM_SCOPED', `Scoped problem: "${input.title}"`, canonicalId);
+    }
   } else {
     const existing = inMemoryIssues.find((iss) => iss.id === canonicalId);
     if (existing) {
       existing.reportCount += 1;
       existing.lastActivityAt = now;
+      if (input.acceptanceCriteria && (!existing.acceptanceCriteria || existing.acceptanceCriteria.length === 0)) {
+        existing.acceptanceCriteria = input.acceptanceCriteria;
+      }
       existing.observedFrictions.push({
         id: `fric_${Date.now()}`,
         issueId: canonicalId,
@@ -578,6 +596,10 @@ export async function submitProblemReport(
         createdAt: now,
       });
       existing.quietFray = computeQuietFrayForIssue(existing);
+
+      if (input.reporterUserId) {
+        awardPoints(input.reporterUserId, 3, 'EVIDENCE_ADDED', `Added corroborating report to: "${existing.title}"`, canonicalId);
+      }
     }
   }
 
@@ -1072,3 +1094,191 @@ export async function subscribeNewsletter(
 
   return { success: true };
 }
+
+// ============================================================================
+// SOLVER WORKFLOW, THREADED DISCUSSIONS & VERIFIED RESOLUTION
+// ============================================================================
+
+/**
+ * Claims an issue to solve by an authenticated solver.
+ */
+export async function claimIssueForSolver(
+  canonicalIssueId: string,
+  solver: UserProfile,
+  notes?: string
+): Promise<CanonicalIssue> {
+  initRepository();
+  const issue = inMemoryIssues.find((iss) => iss.id === canonicalIssueId);
+  if (!issue) throw new Error('Issue not found');
+
+  const now = new Date().toISOString();
+  issue.claimedSolver = {
+    userId: solver.id,
+    username: solver.username,
+    name: solver.name,
+    avatarUrl: solver.avatarUrl,
+    claimedAt: now,
+    notes,
+  };
+  if (issue.status === 'OPEN') {
+    issue.status = 'BEING_BUILT';
+  }
+  issue.lastActivityAt = now;
+
+  const event: IssueEvent = {
+    id: `evt_${Date.now()}`,
+    canonicalIssueId,
+    type: 'CLAIM_CREATED',
+    actorDescription: `@${solver.username} (Solver)`,
+    details: `Claimed to work on this issue${notes ? `: "${notes}"` : '.'}`,
+    createdAt: now,
+  };
+  inMemoryEvents.unshift(event);
+
+  saveStorage(STORAGE_KEY_ISSUES, inMemoryIssues);
+  saveStorage(STORAGE_KEY_EVENTS, inMemoryEvents);
+  return issue;
+}
+
+/**
+ * Adds a threaded discussion comment or proposal update to an issue.
+ */
+export async function addIssueDiscussion(
+  canonicalIssueId: string,
+  commentData: Omit<DiscussionComment, 'id' | 'createdAt' | 'reactions'>
+): Promise<DiscussionComment> {
+  initRepository();
+  const issue = inMemoryIssues.find((iss) => iss.id === canonicalIssueId);
+  if (!issue) throw new Error('Issue not found');
+
+  const now = new Date().toISOString();
+  const newComment: DiscussionComment = {
+    id: `dsc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    canonicalIssueId,
+    parentId: commentData.parentId,
+    author: commentData.author,
+    content: commentData.content,
+    reactions: {},
+    solutionId: commentData.solutionId,
+    createdAt: now,
+  };
+
+  if (!issue.discussions) issue.discussions = [];
+  issue.discussions.push(newComment);
+  issue.lastActivityAt = now;
+
+  saveStorage(STORAGE_KEY_ISSUES, inMemoryIssues);
+
+  // If author is authenticated user, award +2 points for community contribution
+  if (commentData.author.userId) {
+    awardPoints(
+      commentData.author.userId,
+      2,
+      'EVIDENCE_ADDED',
+      `Contributed to discussion on: "${issue.title}"`,
+      canonicalIssueId
+    );
+  }
+
+  return newComment;
+}
+
+/**
+ * Adds an emoji reaction to a discussion comment.
+ */
+export async function addDiscussionReaction(
+  canonicalIssueId: string,
+  commentId: string,
+  emoji: string
+): Promise<void> {
+  initRepository();
+  const issue = inMemoryIssues.find((iss) => iss.id === canonicalIssueId);
+  if (!issue || !issue.discussions) return;
+
+  const comment = issue.discussions.find((c) => c.id === commentId);
+  if (!comment) return;
+
+  if (!comment.reactions) comment.reactions = {};
+  comment.reactions[emoji] = (comment.reactions[emoji] || 0) + 1;
+  saveStorage(STORAGE_KEY_ISSUES, inMemoryIssues);
+}
+
+/**
+ * Verifies a proposed solution against acceptance criteria and marks issue SOLVED.
+ * Awards +50 points to the solver and +10 points to the verifier!
+ */
+export async function verifyAndCloseIssueWithResolution(
+  canonicalIssueId: string,
+  solutionId: string,
+  verifierUser?: UserProfile | null,
+  verificationNotes?: string
+): Promise<CanonicalIssue> {
+  initRepository();
+  const issue = inMemoryIssues.find((iss) => iss.id === canonicalIssueId);
+  if (!issue) throw new Error('Issue not found');
+
+  const solution = issue.solutions.find((s) => s.id === solutionId);
+  if (!solution) throw new Error('Referenced solution not found');
+
+  const now = new Date().toISOString();
+  issue.status = 'SOLVED';
+  issue.resolutionReportId = solutionId;
+  issue.resolutionEvidence = verificationNotes || solution.verificationEvidence || 'Verified against acceptance criteria';
+  issue.lastActivityAt = now;
+  issue.closedBy = verifierUser
+    ? {
+        userId: verifierUser.id,
+        username: verifierUser.username,
+        closedAt: now,
+        solutionId,
+      }
+    : {
+        userId: 'community_verifier',
+        username: 'community',
+        closedAt: now,
+        solutionId,
+      };
+
+  solution.status = 'ACCEPTED';
+  solution.stage = 'INDEPENDENTLY_VERIFIED';
+  solution.updatedAt = now;
+
+  // Award +50 points to the solver who claimed / built this solution
+  if (issue.claimedSolver?.userId) {
+    awardPoints(
+      issue.claimedSolver.userId,
+      50,
+      'SOLUTION_ACCEPTED',
+      `Solution verified and marked SOLVED for "${issue.title}"`,
+      canonicalIssueId
+    );
+  }
+
+  // Award +10 points to verifier if different user
+  if (verifierUser && verifierUser.id !== issue.claimedSolver?.userId) {
+    awardPoints(
+      verifierUser.id,
+      10,
+      'VERIFICATION_CONDUCTED',
+      `Verified solution for "${issue.title}"`,
+      canonicalIssueId
+    );
+  }
+
+  const event: IssueEvent = {
+    id: `evt_${Date.now()}`,
+    canonicalIssueId,
+    type: 'MARKED_SOLVED',
+    actorDescription: verifierUser ? `@${verifierUser.username} (Verified Solver)` : 'Community Verifier',
+    details: `Issue verified & closed: ${verificationNotes || 'Accepted solution criteria.'}`,
+    solutionReportId: solutionId,
+    createdAt: now,
+  };
+  inMemoryEvents.unshift(event);
+
+  saveStorage(STORAGE_KEY_ISSUES, inMemoryIssues);
+  saveStorage(STORAGE_KEY_EVENTS, inMemoryEvents);
+
+  return issue;
+}
+
