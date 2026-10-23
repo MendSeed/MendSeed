@@ -1,6 +1,10 @@
 import { neon } from '@neondatabase/serverless';
 
-const sql = neon('postgresql://neondb_owner:npg_eCQF7EAz9nNB@ep-weathered-dew-b7xn2b9t-pooler.c-13.us-east-1.aws.neon.tech/neondb?sslmode=require');
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  throw new Error('DATABASE_URL must be provided through the environment.');
+}
+const sql = neon(databaseUrl);
 
 async function test() {
   const tables = await sql`SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name`;

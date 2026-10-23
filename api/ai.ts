@@ -7,10 +7,19 @@
 declare const process: any;
 
 const AI_BASE_URL = (process.env.MENDSEED_AI_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
-const AI_SECRET_KEY = process.env.MENDSEED_AI_SECRET_KEY || 'mendseed_production_key_default_123';
+const AI_SECRET_KEY = process.env.MENDSEED_AI_SECRET_KEY;
 const REQUEST_TIMEOUT_MS = 12000;
 
 export default async function handler(req: any, res: any) {
+  if (!AI_SECRET_KEY) {
+    console.error('[AI Proxy] MENDSEED_AI_SECRET_KEY is not configured');
+    return res.status(503).json({
+      success: false,
+      aiProcessingState: 'STANDBY',
+      error: 'AI service is not configured',
+      human_review_required: true,
+    });
+  }
   // CORS & Methods
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');

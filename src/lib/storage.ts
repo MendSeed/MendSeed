@@ -12,15 +12,12 @@ import type {
   NewsletterSubscriber,
   ProblemReport,
   SolutionReport,
-  SolutionStage,
   SupportVote,
-  WorkClaim,
 } from '../types';
 import { hashCapability } from './capabilities';
 import type { TemporalEvent } from '../../quietfray/src/model';
 import { computeBatchReference } from '../../quietfray/src/model';
 import { generateEmbedding } from './gemini';
-import { neon } from '@neondatabase/serverless';
 
 const STORAGE_KEY_ISSUES = 'mendseed_canonical_issues_v2';
 const STORAGE_KEY_REPORTS = 'mendseed_problem_reports_v2';
@@ -28,21 +25,16 @@ const STORAGE_KEY_VOTES = 'mendseed_support_votes_v2';
 const STORAGE_KEY_EVENTS = 'mendseed_issue_events_v2';
 const STORAGE_KEY_SUBSCRIBERS = 'mendseed_subscribers_v2';
 
-// Neon connection
-const NEON_URL =
-  (import.meta as any).env?.VITE_NEON_DATABASE_URL ||
-  'postgresql://neondb_owner:npg_eCQF7EAz9nNB@ep-weathered-dew-b7xn2b9t-pooler.c-13.us-east-1.aws.neon.tech/neondb?sslmode=require';
-
-let dbClient: ReturnType<typeof neon> | null = null;
-function getDb() {
-  if (!dbClient && NEON_URL) {
-    try {
-      dbClient = neon(NEON_URL);
-    } catch (err) {
-      console.warn('[Neon] Client initialization failed:', err);
-    }
-  }
-  return dbClient;
+// Database access belongs on the server. Never expose a Neon connection string
+// through Vite's client bundle, even when it is supplied as an environment value.
+// The API repository remains the source of truth until the client repository is
+// migrated fully to same-origin API calls.
+type DatabaseClient = (
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+) => Promise<unknown[]>;
+function getDb(): DatabaseClient | null {
+  return null;
 }
 
 // In-memory / browser cache (starts strictly EMPTY: zero dummy data)
@@ -192,128 +184,28 @@ export function initRepository() {
  * Syncs the in-memory and local cache with the real Neon PostgreSQL database.
  */
 export async function syncWithNeon(): Promise<void> {
-  const sql = getDb();
-  if (!sql) return;
-
   try {
-    const rawIssues = (await sql`SELECT * FROM canonical_issues ORDER BY last_activity_at DESC`) as any[];
-    const rawFrictions = (await sql`SELECT * FROM observed_frictions`) as any[];
-    const rawSolutions = (await sql`SELECT * FROM solution_reports ORDER BY created_at DESC`) as any[];
-    const rawClaims = (await sql`SELECT * FROM work_claims WHERE status = 'ACTIVE'`) as any[];
-    const rawEvents = (await sql`SELECT * FROM issue_events ORDER BY created_at DESC LIMIT 50`) as any[];
-    const rawVotes = (await sql`SELECT * FROM support_votes`) as any[];
-    const rawReports = (await sql`SELECT * FROM problem_reports ORDER BY created_at DESC`) as any[];
-
-    const parsedIssues: CanonicalIssue[] = rawIssues.map((iss: any) => {
-      const issueFrictions = rawFrictions
-        .filter((f: any) => f.canonical_issue_id === iss.id)
-        .map((f: any) => ({
-          id: f.id,
-          issueId: f.canonical_issue_id,
-          statement: f.statement,
-          supportingReportIds: f.supporting_report_ids || [],
-          source: f.source,
-          confidence: f.confidence,
-          createdAt: f.created_at,
-        }));
-
-      const issueSolutions = rawSolutions
-        .filter((s: any) => s.canonical_issue_id === iss.id)
-        .map((s: any) => ({
-          id: s.id,
-          canonicalIssueId: s.canonical_issue_id,
-          submitterCapabilityHash: s.submitter_capability_hash,
-          title: s.title,
-          summary: s.summary,
-          aspectsAddressed: s.aspects_addressed || [],
-          usageInstructions: s.usage_instructions,
-          stage: s.stage as SolutionStage,
-          projectName: s.project_name,
-          githubUrl: s.github_url,
-          demoUrl: s.demo_url,
-          docsUrl: s.docs_url,
-          verificationEvidence: s.verification_evidence,
-          status: s.status,
-          createdAt: s.created_at,
-          updatedAt: s.updated_at,
-        }));
-
-      const activeClaimRow = rawClaims.find((c: any) => c.canonical_issue_id === iss.id);
-      const activeClaim: WorkClaim | undefined = activeClaimRow
-        ? {
-            id: activeClaimRow.id,
-            canonicalIssueId: iss.id,
-            claimantCapabilityHash: activeClaimRow.claimant_capability_hash,
-            status: 'ACTIVE',
-            createdAt: activeClaimRow.created_at,
-            lastActivityAt: activeClaimRow.last_activity_at,
-            expiresAt: activeClaimRow.expires_at,
-            notes: activeClaimRow.notes,
-          }
-        : undefined;
-
-      const issue: CanonicalIssue = {
-        id: iss.id,
-        slug: iss.slug,
-        title: iss.title,
-        problemStatement: iss.problem_statement,
-        description: iss.description,
-        category: iss.category as Category,
-        status: iss.status as IssueStatus,
-        supportCount: Number(iss.support_count) || 0,
-        downvoteCount: Number(iss.downvote_count) || 0,
-        reportCount: Number(iss.report_count) || 0,
-        summaryVersion: Number(iss.summary_version) || 1,
-        publishedAt: iss.published_at,
-        lastActivityAt: iss.last_activity_at,
-        observedFrictions: issueFrictions,
-        solutions: issueSolutions,
-        activeClaim,
+    const response = await fetch('/api/issues?limit=100');
+    if (!response.ok) {
+      if (response.status === 404) return;
+      throw new Error(`Issue API returned HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    inMemoryIssues = (payload.issues || []).map((issue: CanonicalIssue) => {
+      const normalized: CanonicalIssue = {
+        ...issue,
+        supportCount: Number(issue.supportCount) || 0,
+        downvoteCount: Number(issue.downvoteCount) || 0,
+        reportCount: Number(issue.reportCount) || 0,
+        observedFrictions: issue.observedFrictions || [],
+        solutions: issue.solutions || [],
       };
-
-      issue.quietFray = computeQuietFrayForIssue(issue);
-      return issue;
+      normalized.quietFray = computeQuietFrayForIssue(normalized);
+      return normalized;
     });
-
-    inMemoryIssues = parsedIssues;
-    inMemoryEvents = rawEvents.map((e: any) => ({
-      id: e.id,
-      canonicalIssueId: e.canonical_issue_id,
-      type: e.type,
-      actorDescription: e.actor_description,
-      details: e.details,
-      solutionReportId: e.solution_report_id,
-      createdAt: e.created_at,
-    }));
-
-    inMemoryVotes = rawVotes.map((v: any) => ({
-      id: v.id,
-      canonicalIssueId: v.canonical_issue_id,
-      voterCapabilityHash: v.voter_capability_hash,
-      direction: v.direction,
-      createdAt: v.created_at,
-    }));
-
-    inMemoryReports = rawReports.map((r: any) => ({
-      id: r.id,
-      canonicalIssueId: r.canonical_issue_id,
-      title: r.title,
-      description: r.description,
-      category: r.category as Category,
-      status: r.status,
-      reporterCapabilityHash: r.reporter_capability_hash,
-      confidenceProxy: r.confidence_proxy,
-      diversityProxy: r.diversity_proxy,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    }));
-
     saveStorage(STORAGE_KEY_ISSUES, inMemoryIssues);
-    saveStorage(STORAGE_KEY_REPORTS, inMemoryReports);
-    saveStorage(STORAGE_KEY_VOTES, inMemoryVotes);
-    saveStorage(STORAGE_KEY_EVENTS, inMemoryEvents);
   } catch (err) {
-    console.warn('[Neon Sync] Background sync error:', err);
+    console.warn('[Issue API Sync] Falling back to local cache:', err);
   }
 }
 
@@ -432,6 +324,27 @@ export async function castSupportVote(
   const voterHash = await hashCapability(voterCapabilityToken);
   const now = new Date().toISOString();
 
+  try {
+    const response = await fetch('/api/votes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ canonicalIssueId, voterCapabilityHash: voterHash, direction }),
+    });
+    if (response.ok) {
+      const payload = await response.json();
+      await syncWithNeon();
+      const refreshed = inMemoryIssues.find((iss) => iss.id === canonicalIssueId);
+      return { userVote: payload.userVote ?? null, newCount: refreshed?.supportCount ?? 0 };
+    }
+    if (response.status !== 404) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || `Vote API returned HTTP ${response.status}`);
+    }
+  } catch (err) {
+    if (!(err instanceof TypeError)) throw err;
+    console.warn('[Vote API] Offline; using local fallback.');
+  }
+
   let userVote: 'UP' | 'DOWN' | null = null;
   let newCount = 0;
 
@@ -524,6 +437,45 @@ export async function submitProblemReport(
   const reporterHash = await hashCapability(reporterCapabilityToken);
   const now = new Date().toISOString();
   const reportId = `rep_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+  try {
+    const response = await fetch('/api/issues', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: input.title,
+        description: input.description,
+        category: input.category,
+        reporterCapabilityHash: reporterHash,
+        targetCanonicalIssueId: input.candidateIssueId,
+      }),
+    });
+    if (response.ok) {
+      const payload = await response.json();
+      const report: ProblemReport = {
+        id: payload.reportId,
+        canonicalIssueId: payload.canonicalIssueId,
+        title: input.title,
+        description: input.description,
+        category: input.category,
+        status: 'PUBLISHED',
+        reporterCapabilityHash: reporterHash,
+        confidenceProxy: 0.92,
+        diversityProxy: 0.85,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await syncWithNeon();
+      return { report, canonicalIssueId: payload.canonicalIssueId };
+    }
+    if (response.status !== 404) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || `Issue API returned HTTP ${response.status}`);
+    }
+  } catch (err) {
+    if (!(err instanceof TypeError)) throw err;
+    console.warn('[Issue API] Offline; using local fallback.');
+  }
 
   const embedding = await generateEmbedding(`${input.title}\n${input.description}`);
 
